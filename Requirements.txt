@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────
+# AI Meeting Assistant — requirements.txt
+# Python 3.10+ recommended
+# ─────────────────────────────────────────────
+
+# ── Audio / YouTube ingestion ─────────────────
+yt-dlp>=2024.4.9                  # Download audio from YouTube URLs
+pydub>=0.25.1                     # Audio file manipulation & conversion
+ffmpeg-python>=0.2.0              # ffmpeg bindings (ffmpeg binary must be installed separately)
+
+# ── Transcription (local Whisper) ────────────
+openai-whisper>=20231117          # Local Whisper ASR model
+
+# ── Translation (Hindi → English) ────────────
+deep-translator>=1.11.4           # Lightweight translation wrapper (Google Translate backend)
+
+# ── LLM — Mistral via free API ───────────────
+mistralai>=1.0.0                  # Official Mistral AI Python client
+
+# ── LangChain LCEL stack ─────────────────────
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-mistralai>=0.1.0        # LangChain ↔ Mistral integration
+
+# ── Embeddings (HuggingFace, local) ──────────
+sentence-transformers>=2.7.0      # HuggingFace embedding models (e.g. all-MiniLM-L6-v2)
+langchain-huggingface>=0.0.3      # LangChain HuggingFaceEmbeddings wrapper
+
+# ── Vector store (RAG) ───────────────────────
+chromadb>=0.5.0                   # Local ChromaDB vector store
+
+# ── Document splitting ───────────────────────
+tiktoken>=0.7.0                   # Token-aware text splitting for LangChain
+
+# ── UI ───────────────────────────────────────
+streamlit>=1.35.0                 # Main web UI
+
+# ── Export ───────────────────────────────────
+reportlab>=4.2.0                  # PDF generation
+fpdf2>=2.7.9                      # Alternative lightweight PDF export
+
+# ── Utilities ────────────────────────────────
+python-dotenv>=1.0.1              # Load .env for API keys
+torch>=2.2.0                      # Required by Whisper & sentence-transformers
+torchaudio>=2.2.0                 # Audio backend for torch
+numpy>=1.26.0
