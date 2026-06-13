@@ -1,7 +1,18 @@
 import whisper
 import os
 import requests
-from pydub import AudioSegment
+
+# Try importing pydub with fallback handling for deployment issues
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ pydub import failed: {e}")
+    print("🔄 Falling back to ffmpeg-only audio processing")
+    PYDUB_AVAILABLE = False
+    AudioSegment = None
+
+import subprocess
 
 # Sarvam's sync STT-translate API rejects audio longer than 30s.
 # We slice each chunk into 25s pieces (with a 5s safety margin) before sending.
@@ -60,6 +71,44 @@ def _send_to_sarvam(piece_path: str) -> str:
     return response.json().get("transcript", "")
 
 
+def _split_audio_with_ffmpeg(chunk_path: str) -> list:
+    """Fallback audio splitting using ffmpeg when pydub is not available."""
+    try:
+        # Get audio duration using ffprobe
+        result = subprocess.run([
+            "ffprobe", "-v", "error", 
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            chunk_path
+        ], capture_output=True, text=True, check=True)
+        
+        duration_seconds = float(result.stdout.strip())
+        piece_seconds = SARVAM_PIECE_SECONDS
+        
+        pieces = []
+        total_pieces = int((duration_seconds + piece_seconds - 1) / piece_seconds)
+        
+        for i in range(total_pieces):
+            start_time = i * piece_seconds
+            piece_path = f"{chunk_path}_sv_{i}.wav"
+            
+            subprocess.run([
+                "ffmpeg", "-i", chunk_path,
+                "-ss", str(start_time),
+                "-t", str(piece_seconds),
+                "-c", "copy", "-y",
+                piece_path
+            ], check=True, capture_output=True)
+            
+            pieces.append(piece_path)
+        
+        return pieces
+        
+    except Exception as e:
+        print(f"❌ ffmpeg splitting failed: {e}")
+        return [chunk_path]  # Return original file as fallback
+
+
 def transcribe_chunk_sarvam(chunk_path: str) -> str:
     """
     Sarvam sync API only accepts ≤30s audio. We split this chunk into
@@ -68,23 +117,39 @@ def transcribe_chunk_sarvam(chunk_path: str) -> str:
     if not SARVAM_API_KEY:
         raise RuntimeError("SARVAM_API_KEY is not set in environment / .env")
 
-    audio = AudioSegment.from_wav(chunk_path)
-    piece_ms = SARVAM_PIECE_SECONDS * 1000
-
     full_text = ""
-    total_pieces = (len(audio) + piece_ms - 1) // piece_ms
+    
+    if PYDUB_AVAILABLE:
+        # Use pydub for audio processing (preferred)
+        audio = AudioSegment.from_wav(chunk_path)
+        piece_ms = SARVAM_PIECE_SECONDS * 1000
+        total_pieces = (len(audio) + piece_ms - 1) // piece_ms
 
-    for i, start in enumerate(range(0, len(audio), piece_ms)):
-        piece = audio[start: start + piece_ms]
-        piece_path = f"{chunk_path}_sv_{i}.wav"
-        piece.export(piece_path, format="wav")
+        for i, start in enumerate(range(0, len(audio), piece_ms)):
+            piece = audio[start: start + piece_ms]
+            piece_path = f"{chunk_path}_sv_{i}.wav"
+            piece.export(piece_path, format="wav")
 
+            try:
+                print(f"  → Sarvam piece {i + 1}/{total_pieces} ...")
+                full_text += _send_to_sarvam(piece_path) + " "
+            finally:
+                if os.path.exists(piece_path):
+                    os.remove(piece_path)
+    else:
+        # Fallback to ffmpeg for audio processing
+        print("🔄 Using ffmpeg fallback for audio splitting")
+        pieces = _split_audio_with_ffmpeg(chunk_path)
+        
         try:
-            print(f"  → Sarvam piece {i + 1}/{total_pieces} ...")
-            full_text += _send_to_sarvam(piece_path) + " "
+            for i, piece_path in enumerate(pieces):
+                print(f"  → Sarvam piece {i + 1}/{len(pieces)} ...")
+                full_text += _send_to_sarvam(piece_path) + " "
         finally:
-            if os.path.exists(piece_path):
-                os.remove(piece_path)
+            # Clean up temporary pieces
+            for piece_path in pieces:
+                if piece_path != chunk_path and os.path.exists(piece_path):
+                    os.remove(piece_path)
 
     return full_text.strip()
 
