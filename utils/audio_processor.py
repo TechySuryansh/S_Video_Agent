@@ -19,24 +19,34 @@ for path in ["/opt/homebrew/bin", "/usr/local/bin"]:
 DOWNLOAD_DIR="downloades"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-def download_youtube_audio(url: str) -> str:
+def download_youtube_audio(url: str, cookies_path: str = None) -> str:
     """Download audio from YouTube and convert to WAV."""
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
+    
+    # Base options for all strategies
+    base_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": output_path,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "wav",
+            "preferredquality": "192",
+        }],
+        "quiet": False,
+        "no_warnings": False,
+        "nocheckcertificate": True,
+    }
+    
+    # Add cookies if provided
+    if cookies_path and os.path.exists(cookies_path):
+        print(f"🍪 Using cookies from: {cookies_path}")
+        base_opts["cookiefile"] = cookies_path
     
     # Try multiple strategies to bypass 403
     strategies = [
         # Strategy 1: Android client with po_token (most reliable for 2024+)
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "no_warnings": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android_creator"],
@@ -46,15 +56,7 @@ def download_youtube_audio(url: str) -> str:
         },
         # Strategy 2: Android Music client
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android_music"],
@@ -63,15 +65,7 @@ def download_youtube_audio(url: str) -> str:
         },
         # Strategy 3: MediaConnect client (TV)
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["mediaconnect"],
@@ -80,15 +74,7 @@ def download_youtube_audio(url: str) -> str:
         },
         # Strategy 4: iOS client
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["ios"],
@@ -98,15 +84,7 @@ def download_youtube_audio(url: str) -> str:
         },
         # Strategy 5: Standard android with more headers
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android"],
@@ -120,15 +98,7 @@ def download_youtube_audio(url: str) -> str:
         },
         # Strategy 6: Embed player
         {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
+            **base_opts,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web_embedded"],
@@ -258,7 +228,7 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
         return [wav_path]
 
     
-def process_input(source: str) -> list:
+def process_input(source: str, cookies_path: str = None) -> list:
     """
     Route input (URL or file) → WAV → chunks.
     Validates input before processing.
@@ -270,7 +240,7 @@ def process_input(source: str) -> list:
     
     try:
         if source.startswith("http://") or source.startswith("https://"):
-            wav_path = download_youtube_audio(source)
+            wav_path = download_youtube_audio(source, cookies_path=cookies_path)
         else:
             wav_path = convert_to_wav(source)
         

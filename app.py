@@ -351,8 +351,28 @@ with st.sidebar:
         source = st.text_input(
             "YouTube URL", 
             placeholder="https://youtube.com/watch?v=...",
-            help="⚠️ Note: YouTube may block downloads on cloud servers. If you get 403 errors, try uploading the file instead."
         )
+        
+        with st.expander("⚙️ Advanced: YouTube Cookies (Optional)", expanded=False):
+            st.markdown("""
+            <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.6">
+            If YouTube blocks downloads, you can provide cookies from your browser:
+            <ol style="margin:0.5rem 0;padding-left:1.2rem">
+            <li>Install browser extension: <b>Get cookies.txt LOCALLY</b></li>
+            <li>Go to youtube.com and ensure you're logged in</li>
+            <li>Export cookies as <b>cookies.txt</b></li>
+            <li>Upload the file below</li>
+            </ol>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            cookies_file = st.file_uploader(
+                "Upload cookies.txt",
+                type=["txt"],
+                help="Netscape format cookies from youtube.com",
+                label_visibility="collapsed"
+            )
+        
         uploaded_file = None
     else:
         st.markdown("Upload audio or video file:")
@@ -362,6 +382,7 @@ with st.sidebar:
             label_visibility="collapsed"
         )
         source = None
+        cookies_file = None
 
     language = st.selectbox("Language", ["english", "hinglish"], index=0)
 
