@@ -24,7 +24,7 @@ def download_youtube_audio(url: str) -> str:
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": output_path,  # Correct key name
+        "outtmpl": output_path,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -32,14 +32,30 @@ def download_youtube_audio(url: str) -> str:
                 "preferredquality": "192",
             }
         ],
-        "quiet": False,  # Show progress
+        "quiet": False,
         "nocheckcertificate": True,
         
-        # ─── CONNECTION FIXES ───
+        # ─── CONNECTION & YOUTUBE ACCESS FIXES ───
         "retries": 10,
         "fragment_retries": 10,
         "socket_timeout": 30,
         "source_address": "0.0.0.0",  # Forces IPv4
+        
+        # YouTube bot detection bypass
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+                "skip": ["dash", "hls"]
+            }
+        },
+        
+        # Additional headers to avoid 403
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-us,en;q=0.5",
+            "Sec-Fetch-Mode": "navigate",
+        }
     }
     
     try:
