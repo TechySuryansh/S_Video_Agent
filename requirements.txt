@@ -1,0 +1,10 @@
+yt-dlp>=2024.4.9
+streamlit>=1.35.0
+python-dotenv>=1.0.1
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-groq>=0.1.0
+requests>=2.31.0
+pydub>=0.25.1
+sarvam-ai>=1.0.0
