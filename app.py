@@ -339,8 +339,29 @@ with st.sidebar:
     st.markdown('<div class="hero-sub">Meeting Intelligence</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    st.markdown('<span class="badge badge-purple">Input</span>', unsafe_allow_html=True)
-    source = st.text_input("YouTube URL or File Path", placeholder="https://youtube.com/watch?v=... or /path/to/file.mp4")
+    st.markdown('<span class="badge badge-purple">Input Method</span>', unsafe_allow_html=True)
+    
+    input_method = st.radio(
+        "Choose input source:",
+        ["YouTube URL", "Upload File"],
+        label_visibility="collapsed"
+    )
+    
+    if input_method == "YouTube URL":
+        source = st.text_input(
+            "YouTube URL", 
+            placeholder="https://youtube.com/watch?v=...",
+            help="⚠️ Note: YouTube may block downloads on cloud servers. If you get 403 errors, try uploading the file instead."
+        )
+        uploaded_file = None
+    else:
+        st.markdown("Upload audio or video file:")
+        uploaded_file = st.file_uploader(
+            "Choose file",
+            type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac"],
+            label_visibility="collapsed"
+        )
+        source = None
 
     language = st.selectbox("Language", ["english", "hinglish"], index=0)
 
@@ -366,67 +387,95 @@ st.markdown("---")
 
 # ── Run Pipeline ────────────────────────────────────────────────────────────────
 if run_btn:
-    if not source.strip():
-        st.error("Please enter a YouTube URL or file path.")
-    else:
-        st.session_state.pipeline_done = False
-        st.session_state.result = None
-        st.session_state.chat_history = []
-        st.session_state.pipeline_steps = {}
+    # Validate input based on method
+    if input_method == "YouTube URL":
+        if not source or not source.strip():
+            st.error("Please enter a YouTube URL.")
+            st.stop()
+        
+        source_clean = source.strip()
+        
+        # Validate YouTube URL
+        if "youtube.com" not in source_clean and "youtu.be" not in source_clean:
+            st.error("⚠️ Please enter a valid YouTube URL (must contain youtube.com or youtu.be)")
+            st.stop()
+        
+        input_source = source_clean
+        
+    else:  # Upload File
+        if not uploaded_file:
+            st.error("Please upload an audio or video file.")
+            st.stop()
+        
+        # Save uploaded file temporarily
+        import tempfile
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, uploaded_file.name)
+        
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        input_source = temp_path
+        st.info(f"📁 File uploaded: {uploaded_file.name} ({uploaded_file.size / (1024*1024):.1f} MB)")
+    
+    st.session_state.pipeline_done = False
+    st.session_state.result = None
+    st.session_state.chat_history = []
+    st.session_state.pipeline_steps = {}
 
-        progress_placeholder = st.empty()
+    progress_placeholder = st.empty()
 
-        def update_step(key, state):
-            st.session_state.pipeline_steps[key] = state
+    def update_step(key, state):
+        st.session_state.pipeline_steps[key] = state
 
-        try:
-            with progress_placeholder.container():
-                st.info("⚙️ Pipeline running — see sidebar for live status…")
+    try:
+        with progress_placeholder.container():
+            st.info("⚙️ Pipeline running — see sidebar for live status…")
 
-            update_step("audio", "active")
-            print(f"[DEBUG] Starting audio processing for: {source[:50]}...")
-            chunks = process_input(source)
-            print(f"[DEBUG] Audio processing complete. Chunks: {len(chunks)}")
-            update_step("audio", "done")
+        update_step("audio", "active")
+        print(f"[DEBUG] Starting audio processing...")
+        chunks = process_input(input_source)
+        print(f"[DEBUG] Audio processing complete. Chunks: {len(chunks)}")
+        update_step("audio", "done")
 
-            update_step("transcript", "active")
-            transcript = transcribe_all(chunks, language)
+        update_step("transcript", "active")
+        transcript = transcribe_all(chunks, language)
+        
+        # Validate transcript is not empty
+        if not transcript or len(transcript.strip()) < 10:
+            raise ValueError("Transcription resulted in empty or too-short text")
+        
+        update_step("transcript", "done")
+
+        # ── Run title + summary in parallel ──
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+        update_step("title", "active")
+        update_step("summary", "active")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_title   = pool.submit(generate_title, transcript)
+            future_summary = pool.submit(summarize, transcript)
             
-            # Validate transcript is not empty
-            if not transcript or len(transcript.strip()) < 10:
-                raise ValueError("Transcription resulted in empty or too-short text")
+            try:
+                title   = future_title.result(timeout=60)  # 60 sec timeout
+                summary = future_summary.result(timeout=60)
+            except TimeoutError:
+                raise RuntimeError("Title/Summary generation timed out")
+
+        update_step("title", "done")
+        update_step("summary", "done")
+
+        # ── Run all 3 extractions in parallel ──
+        update_step("extract", "active")
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            future_actions   = pool.submit(extract_action_items, transcript)
+            future_decisions = pool.submit(extract_key_decisions, transcript)
+            future_questions = pool.submit(extract_questions, transcript)
             
-            update_step("transcript", "done")
-
-            # ── Run title + summary in parallel ──
-            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-            update_step("title", "active")
-            update_step("summary", "active")
-
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_title   = pool.submit(generate_title, transcript)
-                future_summary = pool.submit(summarize, transcript)
-                
-                try:
-                    title   = future_title.result(timeout=60)  # 60 sec timeout
-                    summary = future_summary.result(timeout=60)
-                except TimeoutError:
-                    raise RuntimeError("Title/Summary generation timed out")
-
-            update_step("title", "done")
-            update_step("summary", "done")
-
-            # ── Run all 3 extractions in parallel ──
-            update_step("extract", "active")
-
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                future_actions   = pool.submit(extract_action_items, transcript)
-                future_decisions = pool.submit(extract_key_decisions, transcript)
-                future_questions = pool.submit(extract_questions, transcript)
-                
-                try:
-                    action_items = future_actions.result(timeout=60)
-                    decisions    = future_decisions.result(timeout=60)
+            try:
+                action_items = future_actions.result(timeout=60)
+                decisions    = future_decisions.result(timeout=60)
                     questions    = future_questions.result(timeout=60)
                 except TimeoutError:
                     raise RuntimeError("Extraction tasks timed out")
