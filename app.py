@@ -476,18 +476,18 @@ if run_btn:
             try:
                 action_items = future_actions.result(timeout=60)
                 decisions    = future_decisions.result(timeout=60)
-                    questions    = future_questions.result(timeout=60)
-                except TimeoutError:
-                    raise RuntimeError("Extraction tasks timed out")
+                questions    = future_questions.result(timeout=60)
+            except TimeoutError:
+                raise RuntimeError("Extraction tasks timed out")
 
-            update_step("extract", "done")
+        update_step("extract", "done")
 
-            update_step("rag", "active")
-            rag_chain = build_rag_chain(transcript)
-            update_step("rag", "done")
+        update_step("rag", "active")
+        rag_chain = build_rag_chain(transcript)
+        update_step("rag", "done")
 
-            st.session_state.result = {
-                "title": title,
+        st.session_state.result = {
+            "title": title,
                 "transcript": transcript,
                 "summary": summary,
                 "action_items": action_items,
