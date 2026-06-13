@@ -25,7 +25,78 @@ def download_youtube_audio(url: str) -> str:
     
     # Try multiple strategies to bypass 403
     strategies = [
-        # Strategy 1: Android client (most reliable)
+        # Strategy 1: Android client with po_token (most reliable for 2024+)
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "no_warnings": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android_creator"],
+                    "player_skip": ["webpage", "configs"],
+                }
+            },
+        },
+        # Strategy 2: Android Music client
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android_music"],
+                }
+            },
+        },
+        # Strategy 3: MediaConnect client (TV)
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["mediaconnect"],
+                }
+            },
+        },
+        # Strategy 4: iOS client
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios"],
+                    "player_skip": ["configs"],
+                }
+            },
+        },
+        # Strategy 5: Standard android with more headers
         {
             "format": "bestaudio/best",
             "outtmpl": output_path,
@@ -41,8 +112,13 @@ def download_youtube_audio(url: str) -> str:
                     "player_client": ["android"],
                 }
             },
+            "http_headers": {
+                "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 13) gzip",
+                "X-YouTube-Client-Name": "3",
+                "X-YouTube-Client-Version": "19.09.37",
+            }
         },
-        # Strategy 2: iOS client
+        # Strategy 6: Embed player
         {
             "format": "bestaudio/best",
             "outtmpl": output_path,
@@ -55,33 +131,16 @@ def download_youtube_audio(url: str) -> str:
             "nocheckcertificate": True,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["ios"],
+                    "player_client": ["web_embedded"],
                 }
             },
         },
-        # Strategy 3: Web with enhanced headers
-        {
-            "format": "bestaudio/best",
-            "outtmpl": output_path,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }],
-            "quiet": False,
-            "nocheckcertificate": True,
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-us,en;q=0.5",
-            }
-        }
     ]
     
     last_error = None
     for i, ydl_opts in enumerate(strategies, 1):
         try:
-            print(f"Attempting download strategy {i}/{len(strategies)}...")
+            print(f"🔄 Attempting download strategy {i}/{len(strategies)}...")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 
@@ -92,27 +151,38 @@ def download_youtube_audio(url: str) -> str:
                 if not os.path.exists(wav_path):
                     raise FileNotFoundError(f"Downloaded file not found: {wav_path}")
                 
+                print(f"✅ Download successful with strategy {i}")
                 print(f"✓ Downloaded: {wav_path}")
                 return wav_path
                 
         except Exception as e:
             last_error = e
-            print(f"Strategy {i} failed: {str(e)[:100]}")
+            error_str = str(e)
+            print(f"❌ Strategy {i} failed: {error_str[:150]}")
+            
+            # If it's not a 403, might be a different issue worth stopping for
+            if "403" not in error_str and "Forbidden" not in error_str:
+                if "Sign in" in error_str or "unavailable" in error_str.lower():
+                    print(f"Video might be private, age-restricted, or unavailable")
+            
             continue
     
     # All strategies failed
-    error_msg = f"All download strategies failed. Last error: {last_error}"
+    error_msg = f"All {len(strategies)} download strategies failed."
     print(f"❌ {error_msg}")
     
     # Provide helpful error message
     if "403" in str(last_error) or "Forbidden" in str(last_error):
         raise RuntimeError(
-            "YouTube blocked the download (403 Forbidden). "
-            "This video may be restricted or rate-limited. "
-            "Try: 1) A different video, 2) Wait a few minutes, or 3) Upload the audio file directly instead."
+            "⚠️ YouTube blocked all download attempts (403 Forbidden). "
+            "This happens on cloud servers due to YouTube's bot detection. "
+            "\n\n💡 Solutions:\n"
+            "1. Use the 'Upload File' option in the sidebar (Recommended)\n"
+            "2. Try a different YouTube video\n"
+            "3. Run this app locally on your machine"
         )
     else:
-        raise RuntimeError(error_msg)
+        raise RuntimeError(f"{error_msg}\nLast error: {last_error}")
 
 def convert_to_wav(input_path: str) -> str:
     """Convert any audio/video file to WAV format using ffmpeg."""
