@@ -488,26 +488,26 @@ if run_btn:
 
         st.session_state.result = {
             "title": title,
-                "transcript": transcript,
-                "summary": summary,
-                "action_items": action_items,
-                "key_decisions": decisions,
-                "open_questions": questions,
-            }
-            st.session_state.pipeline_done = True
-            progress_placeholder.success("✅ Analysis complete!")
-            time.sleep(0.5)
-            progress_placeholder.empty()
-            st.rerun()
+            "transcript": transcript,
+            "summary": summary,
+            "action_items": action_items,
+            "key_decisions": decisions,
+            "open_questions": questions,
+        }
+        st.session_state.pipeline_done = True
+        progress_placeholder.success("✅ Analysis complete!")
+        time.sleep(0.5)
+        progress_placeholder.empty()
+        st.rerun()
 
-        except Exception as e:
-            for k in ["audio","transcript","title","summary","extract","rag"]:
-                if st.session_state.pipeline_steps.get(k) == "active":
-                    st.session_state.pipeline_steps[k] = "pending"
-            progress_placeholder.error(f"❌ Error: {str(e)}")
-            print(f"Pipeline error: {e}")
-            import traceback
-            traceback.print_exc()
+    except Exception as e:
+        for k in ["audio","transcript","title","summary","extract","rag"]:
+            if st.session_state.pipeline_steps.get(k) == "active":
+                st.session_state.pipeline_steps[k] = "pending"
+        progress_placeholder.error(f"❌ Error: {str(e)}")
+        print(f"Pipeline error: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ── Results ──────────────────────────────────────────────────────────────────────
 if st.session_state.result:
