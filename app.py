@@ -1,9 +1,5 @@
 import streamlit as st
 import time
-import ssl
-import os
-ssl._create_default_https_context = ssl._create_unverified_context
-os.environ["PYTHONHTTPSVERIFY"] = "0"
 from dotenv import load_dotenv
 from utils.audio_processor import process_input
 from core.transcriber import transcribe_all
@@ -339,50 +335,8 @@ with st.sidebar:
     st.markdown('<div class="hero-sub">Meeting Intelligence</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    st.markdown('<span class="badge badge-purple">Input Method</span>', unsafe_allow_html=True)
-    
-    input_method = st.radio(
-        "Choose input source:",
-        ["YouTube URL", "Upload File"],
-        label_visibility="collapsed"
-    )
-    
-    if input_method == "YouTube URL":
-        source = st.text_input(
-            "YouTube URL", 
-            placeholder="https://youtube.com/watch?v=...",
-        )
-        
-        with st.expander("⚙️ Advanced: YouTube Cookies (Optional)", expanded=False):
-            st.markdown("""
-            <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.6">
-            If YouTube blocks downloads, you can provide cookies from your browser:
-            <ol style="margin:0.5rem 0;padding-left:1.2rem">
-            <li>Install browser extension: <b>Get cookies.txt LOCALLY</b></li>
-            <li>Go to youtube.com and ensure you're logged in</li>
-            <li>Export cookies as <b>cookies.txt</b></li>
-            <li>Upload the file below</li>
-            </ol>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            cookies_file = st.file_uploader(
-                "Upload cookies.txt",
-                type=["txt"],
-                help="Netscape format cookies from youtube.com",
-                label_visibility="collapsed"
-            )
-        
-        uploaded_file = None
-    else:
-        st.markdown("Upload audio or video file:")
-        uploaded_file = st.file_uploader(
-            "Choose file",
-            type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac"],
-            label_visibility="collapsed"
-        )
-        source = None
-        cookies_file = None
+    st.markdown('<span class="badge badge-purple">Input</span>', unsafe_allow_html=True)
+    source = st.text_input("YouTube URL or File Path", placeholder="https://youtube.com/watch?v=... or /path/to/file.mp4")
 
     language = st.selectbox("Language", ["english", "hinglish"], index=0)
 
@@ -408,127 +362,69 @@ st.markdown("---")
 
 # ── Run Pipeline ────────────────────────────────────────────────────────────────
 if run_btn:
-    # Validate input based on method
-    if input_method == "YouTube URL":
-        if not source or not source.strip():
-            st.error("Please enter a YouTube URL.")
-            st.stop()
-        
-        source_clean = source.strip()
-        
-        # Validate YouTube URL
-        if "youtube.com" not in source_clean and "youtu.be" not in source_clean:
-            st.error("⚠️ Please enter a valid YouTube URL (must contain youtube.com or youtu.be)")
-            st.stop()
-        
-        input_source = source_clean
-        
-    else:  # Upload File
-        if not uploaded_file:
-            st.error("Please upload an audio or video file.")
-            st.stop()
-        
-        # Save uploaded file temporarily
-        import tempfile
-        temp_dir = tempfile.mkdtemp()
-        temp_path = os.path.join(temp_dir, uploaded_file.name)
-        
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        input_source = temp_path
-        st.info(f"📁 File uploaded: {uploaded_file.name} ({uploaded_file.size / (1024*1024):.1f} MB)")
-    
-    st.session_state.pipeline_done = False
-    st.session_state.result = None
-    st.session_state.chat_history = []
-    st.session_state.pipeline_steps = {}
+    if not source.strip():
+        st.error("Please enter a YouTube URL or file path.")
+    else:
+        st.session_state.pipeline_done = False
+        st.session_state.result = None
+        st.session_state.chat_history = []
+        st.session_state.pipeline_steps = {}
 
-    progress_placeholder = st.empty()
+        progress_placeholder = st.empty()
 
-    def update_step(key, state):
-        st.session_state.pipeline_steps[key] = state
+        def update_step(key, state):
+            st.session_state.pipeline_steps[key] = state
 
-    try:
-        with progress_placeholder.container():
-            st.info("⚙️ Pipeline running — see sidebar for live status…")
+        try:
+            with progress_placeholder.container():
+                st.info("⚙️ Pipeline running — see sidebar for live status…")
 
-        update_step("audio", "active")
-        print(f"[DEBUG] Starting audio processing...")
-        chunks = process_input(input_source)
-        print(f"[DEBUG] Audio processing complete. Chunks: {len(chunks)}")
-        update_step("audio", "done")
+            update_step("audio", "active")
+            chunks = process_input(source)
+            update_step("audio", "done")
 
-        update_step("transcript", "active")
-        transcript = transcribe_all(chunks, language)
-        
-        # Validate transcript is not empty
-        if not transcript or len(transcript.strip()) < 10:
-            raise ValueError("Transcription resulted in empty or too-short text")
-        
-        update_step("transcript", "done")
+            update_step("transcript", "active")
+            transcript = transcribe_all(chunks, language)
+            update_step("transcript", "done")
 
-        # ── Run title + summary in parallel ──
-        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-        update_step("title", "active")
-        update_step("summary", "active")
+            update_step("title", "active")
+            title = generate_title(transcript)
+            update_step("title", "done")
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            future_title   = pool.submit(generate_title, transcript)
-            future_summary = pool.submit(summarize, transcript)
-            
-            try:
-                title   = future_title.result(timeout=60)  # 60 sec timeout
-                summary = future_summary.result(timeout=60)
-            except TimeoutError:
-                raise RuntimeError("Title/Summary generation timed out")
+            update_step("summary", "active")
+            summary = summarize(transcript)
+            update_step("summary", "done")
 
-        update_step("title", "done")
-        update_step("summary", "done")
+            update_step("extract", "active")
+            action_items  = extract_action_items(transcript)
+            decisions     = extract_key_decisions(transcript)
+            questions     = extract_questions(transcript)
+            update_step("extract", "done")
 
-        # ── Run all 3 extractions in parallel ──
-        update_step("extract", "active")
+            update_step("rag", "active")
+            rag_chain = build_rag_chain(transcript)
+            update_step("rag", "done")
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            future_actions   = pool.submit(extract_action_items, transcript)
-            future_decisions = pool.submit(extract_key_decisions, transcript)
-            future_questions = pool.submit(extract_questions, transcript)
-            
-            try:
-                action_items = future_actions.result(timeout=60)
-                decisions    = future_decisions.result(timeout=60)
-                questions    = future_questions.result(timeout=60)
-            except TimeoutError:
-                raise RuntimeError("Extraction tasks timed out")
+            st.session_state.result = {
+                "title": title,
+                "transcript": transcript,
+                "summary": summary,
+                "action_items": action_items,
+                "key_decisions": decisions,
+                "open_questions": questions,
+                "rag_chain": rag_chain,
+            }
+            st.session_state.pipeline_done = True
+            progress_placeholder.success("✅ Analysis complete!")
+            time.sleep(0.5)
+            progress_placeholder.empty()
+            st.rerun()
 
-        update_step("extract", "done")
-
-        update_step("rag", "active")
-        rag_chain = build_rag_chain(transcript)
-        update_step("rag", "done")
-
-        st.session_state.result = {
-            "title": title,
-            "transcript": transcript,
-            "summary": summary,
-            "action_items": action_items,
-            "key_decisions": decisions,
-            "open_questions": questions,
-        }
-        st.session_state.pipeline_done = True
-        progress_placeholder.success("✅ Analysis complete!")
-        time.sleep(0.5)
-        progress_placeholder.empty()
-        st.rerun()
-
-    except Exception as e:
-        for k in ["audio","transcript","title","summary","extract","rag"]:
-            if st.session_state.pipeline_steps.get(k) == "active":
-                st.session_state.pipeline_steps[k] = "pending"
-        progress_placeholder.error(f"❌ Error: {str(e)}")
-        print(f"Pipeline error: {e}")
-        import traceback
-        traceback.print_exc()
+        except Exception as e:
+            for k in ["audio","transcript","title","summary","extract","rag"]:
+                if st.session_state.pipeline_steps.get(k) == "active":
+                    st.session_state.pipeline_steps[k] = "pending"
+            progress_placeholder.error(f"❌ Error: {e}")
 
 # ── Results ──────────────────────────────────────────────────────────────────────
 if st.session_state.result:
@@ -620,15 +516,7 @@ if st.session_state.result:
 
     if send_btn and user_input.strip():
         with st.spinner("Thinking…"):
-            rag_chain = build_rag_chain(
-r["transcript"]
-)
-
-            answer = ask_question(
-                rag_chain,
-                user_input.strip()
-            )
-
+            answer = ask_question(r["rag_chain"], user_input.strip())
         st.session_state.chat_history.append({"role": "user",      "content": user_input.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
         st.rerun()
