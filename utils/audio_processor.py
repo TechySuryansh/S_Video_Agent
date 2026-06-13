@@ -22,62 +22,97 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 def download_youtube_audio(url: str) -> str:
     """Download audio from YouTube and convert to WAV."""
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": output_path,
-        "postprocessors": [
-            {
+    
+    # Try multiple strategies to bypass 403
+    strategies = [
+        # Strategy 1: Android client (most reliable)
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "wav",
                 "preferredquality": "192",
-            }
-        ],
-        "quiet": False,
-        "nocheckcertificate": True,
-        
-        # ─── CONNECTION & YOUTUBE ACCESS FIXES ───
-        "retries": 10,
-        "fragment_retries": 10,
-        "socket_timeout": 30,
-        "source_address": "0.0.0.0",  # Forces IPv4
-        
-        # YouTube bot detection bypass
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-                "skip": ["dash", "hls"]
-            }
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"],
+                }
+            },
         },
-        
-        # Additional headers to avoid 403
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-us,en;q=0.5",
-            "Sec-Fetch-Mode": "navigate",
+        # Strategy 2: iOS client
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios"],
+                }
+            },
+        },
+        # Strategy 3: Web with enhanced headers
+        {
+            "format": "bestaudio/best",
+            "outtmpl": output_path,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }],
+            "quiet": False,
+            "nocheckcertificate": True,
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-us,en;q=0.5",
+            }
         }
-    }
+    ]
     
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"Downloading: {url}")
-            info = ydl.extract_info(url, download=True)
-            
-            # Get the output filename correctly
-            filename_no_ext = ydl.prepare_filename(info)
-            base_path = os.path.splitext(filename_no_ext)[0]
-            wav_path = base_path + ".wav"
-            
-            # Verify the file exists
-            if not os.path.exists(wav_path):
-                raise FileNotFoundError(f"Downloaded file not found: {wav_path}")
-            
-            print(f"✓ Downloaded: {wav_path}")
-            return wav_path
-            
-    except Exception as e:
-        print(f"❌ YouTube download failed: {e}")
-        raise
+    last_error = None
+    for i, ydl_opts in enumerate(strategies, 1):
+        try:
+            print(f"Attempting download strategy {i}/{len(strategies)}...")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                
+                filename_no_ext = ydl.prepare_filename(info)
+                base_path = os.path.splitext(filename_no_ext)[0]
+                wav_path = base_path + ".wav"
+                
+                if not os.path.exists(wav_path):
+                    raise FileNotFoundError(f"Downloaded file not found: {wav_path}")
+                
+                print(f"✓ Downloaded: {wav_path}")
+                return wav_path
+                
+        except Exception as e:
+            last_error = e
+            print(f"Strategy {i} failed: {str(e)[:100]}")
+            continue
+    
+    # All strategies failed
+    error_msg = f"All download strategies failed. Last error: {last_error}"
+    print(f"❌ {error_msg}")
+    
+    # Provide helpful error message
+    if "403" in str(last_error) or "Forbidden" in str(last_error):
+        raise RuntimeError(
+            "YouTube blocked the download (403 Forbidden). "
+            "This video may be restricted or rate-limited. "
+            "Try: 1) A different video, 2) Wait a few minutes, or 3) Upload the audio file directly instead."
+        )
+    else:
+        raise RuntimeError(error_msg)
 
 def convert_to_wav(input_path: str) -> str:
     """Convert any audio/video file to WAV format using ffmpeg."""
