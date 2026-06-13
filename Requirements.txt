@@ -12,10 +12,15 @@ ffmpeg-python>=0.2.0              # ffmpeg bindings (ffmpeg binary must be insta
 openai-whisper>=20231117          # Local Whisper ASR model
 
 # ── Translation (Hindi → English) ────────────
-deep-translator>=1.11.4           # Lightweight translation wrapper (Google Translate backend)
+sarvam-ai>=1.0.0                  # Sarvam AI SDK for Hindi/Hinglish transcription
 
 # ── LLM — Groq via free API ─────────────────
 langchain-groq>=0.1.0             # LangChain ↔ Groq integration (free, fast inference)
+
+# ── LangChain LCEL stack ─────────────────────
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
 
 # ── Embeddings (HuggingFace, local) ──────────
 sentence-transformers>=2.7.0      # HuggingFace embedding models (e.g. all-MiniLM-L6-v2)
