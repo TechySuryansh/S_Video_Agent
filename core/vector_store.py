@@ -1,4 +1,5 @@
 import os
+import shutil
 # pyrefly: ignore [missing-import]
 from langchain_chroma import Chroma
 # pyrefly: ignore [missing-import]
@@ -13,11 +14,14 @@ EMBEDDING_MODEL  = "all-MiniLM-L6-v2"
 
 def get_embeddings():
     return HuggingFaceEmbeddings(
-        model_name = EMBEDDING_MODEL,
-        model_kwargs = {"device" : 'cpu'}
-    )
+    model_name=EMBEDDING_MODEL,
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True}
+)
 
 def build_vector_store(transcript : str)->Chroma:
+    if os.path.exists(CHROMA_DIR):
+        shutil.rmtree(CHROMA_DIR)
     print("Building vector Store")
 
     splitter = RecursiveCharacterTextSplitter(
@@ -58,4 +62,4 @@ def get_retriever(vector_store : Chroma, k :int = 4):
         search_type = 'similarity',
         search_kwargs = {"k":k}
     )
-    
+

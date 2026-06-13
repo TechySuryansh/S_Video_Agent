@@ -7,7 +7,7 @@ from pydub import AudioSegment
 
 
 SARVAM_PIECE_SECONDS = 25 
-WHISPER_MODEL=os.getenv("WHISPER_MODEL", "small")
+WHISPER_MODEL=os.getenv("WHISPER_MODEL", "base")
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 SARVAM_STT_TRANSLATE_URL = "https://api.sarvam.ai/speech-to-text-translate"
@@ -30,7 +30,7 @@ def transcribe_chunk_whisper(chunk_path: str) -> str:
 
     model = load_model()  
 
-    result = model.transcribe(chunk_path, task="transcribe")  
+    result = model.transcribe(chunk_path, task="transcribe", fp16=False, language="en")  
     return result["text"]  
 
 
@@ -108,15 +108,18 @@ def transcribe_all(chunks: list, language: str = "english") -> str:
     engine = "Sarvam AI" if language.lower() == "hinglish" else "Whisper"
     print(f"Using {engine} for transcription.")
 
-    for i, chunk in enumerate(chunks):  
+    for i, chunk in enumerate(chunks):
 
         print(f"Transcribing chunk {i + 1}/{len(chunks)}...")
 
-        text = transcribe_chunk(chunk, language=language)  
+        text = transcribe_chunk(chunk, language=language)
 
-        full_transcript += text + " "  
+        full_transcript += text + " "
 
-    print("Transcription complete.")
+        try:
+            os.remove(chunk)
+        except Exception:
+            pass
 
     return full_transcript.strip()  
 

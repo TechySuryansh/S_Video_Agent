@@ -29,6 +29,7 @@ langchain-huggingface>=0.0.3      # LangChain HuggingFaceEmbeddings wrapper
 
 # ── Vector store (RAG) ───────────────────────
 chromadb>=0.5.0                   # Local ChromaDB vector store
+langchain-chroma>=1.0.0            # LangChain ↔ ChromaDB integration
 
 # ── Document splitting ───────────────────────
 tiktoken>=0.7.0                   # Token-aware text splitting for LangChain
@@ -45,3 +46,4 @@ python-dotenv>=1.0.1              # Load .env for API keys
 torch>=2.2.0                      # Required by Whisper & sentence-transformers
 torchaudio>=2.2.0                 # Audio backend for torch
 numpy>=1.26.0
+audioop-lts>=0.2.1                 # audioop backport for Python 3.13+ (needed by pydub)
