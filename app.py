@@ -384,7 +384,9 @@ if run_btn:
                 st.info("⚙️ Pipeline running — see sidebar for live status…")
 
             update_step("audio", "active")
+            print(f"[DEBUG] Starting audio processing for: {source[:50]}...")
             chunks = process_input(source)
+            print(f"[DEBUG] Audio processing complete. Chunks: {len(chunks)}")
             update_step("audio", "done")
 
             update_step("transcript", "active")
