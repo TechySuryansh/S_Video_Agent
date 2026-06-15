@@ -81,7 +81,7 @@ def main():
     web_checks = [
         ("streamlit", "import streamlit as st"),
         ("yt_dlp", "import yt_dlp"),
-        ("dotenv", "from dotenv import load_dotenv"),
+        ("dotenv", "try:\n    from dotenv import load_dotenv\nexcept ImportError:\n    pass"),
     ]
     
     # System commands

@@ -1,5 +1,11 @@
-from dotenv import load_dotenv
-load_dotenv()   # MUST be before any core/ imports
+# Try importing dotenv with fallback for deployment environments
+try:
+    from dotenv import load_dotenv
+    load_dotenv()   # MUST be before any core/ imports
+except ImportError:
+    print("⚠️ python-dotenv not available, using environment variables directly")
+    def load_dotenv():
+        pass
 
 from utils.audio_processor import process_input
 from core.transcriber import transcribe_all
