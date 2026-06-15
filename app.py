@@ -21,10 +21,8 @@ except ImportError:
     def load_dotenv():
         pass  # No-op function
 from utils.audio_processor import process_input
-from core.transcriber import transcribe_all
-from core.summarizer import summarize, generate_title
-from core.extractor import extract_action_items, extract_key_decisions, extract_questions
-from core.rag_engine import build_rag_chain, ask_question
+from core.gemini_service import analyze_audio, ask_question_about_transcript
+
 
 # ─── Page Config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -400,37 +398,15 @@ if run_btn:
             chunks = process_input(source)
             update_step("audio", "done")
 
-            update_step("transcript", "active")
-            transcript = transcribe_all(chunks, language)
-            update_step("transcript", "done")
+            for k in ["transcript", "title", "summary", "extract", "rag"]:
+                update_step(k, "active")
 
-            update_step("title", "active")
-            title = generate_title(transcript)
-            update_step("title", "done")
+            # Call Gemini service to do everything in one go
+            st.session_state.result = analyze_audio(chunks[0])
 
-            update_step("summary", "active")
-            summary = summarize(transcript)
-            update_step("summary", "done")
+            for k in ["transcript", "title", "summary", "extract", "rag"]:
+                update_step(k, "done")
 
-            update_step("extract", "active")
-            action_items  = extract_action_items(transcript)
-            decisions     = extract_key_decisions(transcript)
-            questions     = extract_questions(transcript)
-            update_step("extract", "done")
-
-            update_step("rag", "active")
-            rag_chain = build_rag_chain(transcript)
-            update_step("rag", "done")
-
-            st.session_state.result = {
-                "title": title,
-                "transcript": transcript,
-                "summary": summary,
-                "action_items": action_items,
-                "key_decisions": decisions,
-                "open_questions": questions,
-                "rag_chain": rag_chain,
-            }
             st.session_state.pipeline_done = True
             progress_placeholder.success("✅ Analysis complete!")
             time.sleep(0.5)
@@ -533,7 +509,7 @@ if st.session_state.result:
 
     if send_btn and user_input.strip():
         with st.spinner("Thinking…"):
-            answer = ask_question(r["rag_chain"], user_input.strip())
+            answer = ask_question_about_transcript(r["transcript"], st.session_state.chat_history, user_input.strip())
         st.session_state.chat_history.append({"role": "user",      "content": user_input.strip()})
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
         st.rerun()

@@ -1,52 +1,27 @@
-# Try importing dotenv with fallback for deployment environments
+import os
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    print("⚠️ python-dotenv not available, using environment variables directly")
-    def load_dotenv():
-        pass
+    pass
 
 from utils.audio_processor import process_input
-from core.transcriber import transcribe_all
-from core.summarizer import summarize, generate_title
-from core.extractor import extract_action_items, extract_key_decisions, extract_questions
-from core.rag_engine import build_rag_chain, ask_question
+from core.gemini_service import analyze_audio, ask_question_about_transcript
 
-def run_pipeline(source :str, language :str = "english") -> dict:
-    print("starting AI Video Assistant")
-
+def run_pipeline(source: str) -> dict:
+    print("🎬 Starting AI Video Assistant (Cloud Gemini Edition)...")
     chunks = process_input(source)
-
-    transcript = transcribe_all(chunks,language)
-    print(f"raw transcription (first 300 characters ) {transcript[:300]}")
-
-    title = generate_title(transcript)
-
-    summary = summarize(transcript)
-
-    action_item = extract_action_items(transcript)
-
-    decisions = extract_key_decisions(transcript)
-    questions = extract_questions(transcript)
-    
-    rag_chain = build_rag_chain(transcript)
-
-    return {
-        "title": title,
-        "transcript": transcript,
-        "summary": summary,
-        "action_items": action_item,
-        "key_decisions": decisions,
-        "open_questions": questions,
-        "rag_chain": rag_chain,
-    }
+    result = analyze_audio(chunks[0])
+    return result
 
 if __name__ == "__main__":
     # CLI entry point
     source = input("Enter YouTube URL or local file path: ").strip()
-    language = input("Language (english/hinglish): ").strip() or "english"
-    result = run_pipeline(source, language)
+    if not source:
+        print("❌ Error: Please enter a valid URL or file path.")
+        exit(1)
+        
+    result = run_pipeline(source)
 
     print("\n" + "=" * 60)
     print(f"📌 Title: {result['title']}")
@@ -56,9 +31,9 @@ if __name__ == "__main__":
     print(f"\n❓ Open Questions:\n{result['open_questions']}")
     print("=" * 60)
 
-    # Phase 2 — Chat with your meeting via RAG
+    # Chat loop
     print("\n💬 Chat with your meeting (type 'exit' to quit)\n")
-    rag_chain = result["rag_chain"]
+    chat_history = []
     while True:
         question = input("You: ").strip()
         if question.lower() in ["exit", "quit", "q"]:
@@ -66,5 +41,9 @@ if __name__ == "__main__":
             break
         if not question:
             continue
-        answer = ask_question(rag_chain, question)
+        
+        print("Thinking...")
+        answer = ask_question_about_transcript(result["transcript"], chat_history, question)
         print(f"\n🤖 Assistant: {answer}\n")
+        chat_history.append({"role": "user", "content": question})
+        chat_history.append({"role": "model", "content": answer})
