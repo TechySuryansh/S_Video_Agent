@@ -10,15 +10,31 @@ Make sure your repository contains:
 - `.env.example` (Environment variables template)
 
 ### 2. Environment Variables
-In Streamlit Cloud dashboard, set these secrets:
-```
-WHISPER_MODEL = "small"
-SARVAM_API_KEY = "your_sarvam_api_key"
-SARVAM_STT_MODEL = "saaras:v2.5"
-MISTRAL_API_KEY = "your_mistral_api_key"
+In Streamlit Cloud dashboard, go to "Settings" → "Secrets" and set these environment variables:
+
+**Required:**
+```toml
+MISTRAL_API_KEY = "your_mistral_api_key_here"
 ```
 
+**Optional:**
+```toml
+WHISPER_MODEL = "small"
+SARVAM_API_KEY = "your_sarvam_api_key_here" 
+SARVAM_STT_MODEL = "saaras:v2.5"
+```
+
+**Note:** Streamlit Cloud uses TOML format for secrets, not dotenv format.
+
 ### 3. Known Issues & Solutions
+
+#### `ModuleNotFoundError: dotenv`
+This occurs when python-dotenv is not available in the deployment environment.
+
+**Solution**: The app now includes automatic fallback handling. If you see this error:
+1. The app will automatically use environment variables directly
+2. Make sure you've set the environment variables in Streamlit Cloud secrets
+3. No action needed - the fallback should work automatically
 
 #### `ModuleNotFoundError: pyaudioop`
 This affects pydub on some deployment environments.
