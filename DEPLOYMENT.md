@@ -28,6 +28,11 @@ SARVAM_STT_MODEL = "saaras:v2.5"
 
 ### 3. Known Issues & Solutions
 
+#### `ModuleNotFoundError: aiohttp`
+This was caused by an unnecessary import in the audio processor.
+
+**Solution**: The import has been removed as it was not used by the application.
+
 #### `ModuleNotFoundError: dotenv`
 This occurs when python-dotenv is not available in the deployment environment.
 

@@ -1,4 +1,3 @@
-from aiohttp import base_protocol
 import yt_dlp 
 # pyrefly: ignore [missing-import]
 import os
