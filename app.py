@@ -4,6 +4,7 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 import streamlit as st
 import time
 import ssl
+import tempfile
 
 # Disable SSL verification globally
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -20,8 +21,9 @@ except ImportError:
     print("⚠️ python-dotenv not available, using environment variables directly")
     def load_dotenv():
         pass  # No-op function
-from utils.audio_processor import process_input
+from utils.audio_processor import process_input, convert_to_mp3
 from core.gemini_service import analyze_audio, ask_question_about_transcript
+from utils.pdf_export import generate_pdf_report
 
 
 # ─── Page Config ────────────────────────────────────────────────────────────────
@@ -157,6 +159,24 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 0.875rem;
     line-height: 1.7;
     color: var(--text);
+}
+
+/* ── Copy Button ── */
+.copy-btn {
+    margin-left: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 2px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.65rem;
+    font-family: 'JetBrains Mono', monospace;
+    transition: all 0.2s;
+}
+.copy-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-glow);
 }
 
 /* ── Accent Badge ── */
@@ -304,6 +324,30 @@ hr {
     word-break: break-word;
 }
 
+/* ── Tone card ── */
+.tone-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+.tone-card:hover {
+    border-color: var(--accent);
+}
+.tone-highlight {
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+    line-height: 1.5;
+}
+
 /* ── Stale Streamlit elements ── */
 .stProgress > div > div > div { background: var(--accent) !important; }
 .stSpinner > div { border-top-color: var(--accent) !important; }
@@ -316,6 +360,21 @@ label { color: var(--text-muted) !important; font-size: 0.8rem !important; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 </style>
+""", unsafe_allow_html=True)
+
+# ─── Copy-to-clipboard JS helper ────────────────────────────────────────────────
+st.markdown("""
+<script>
+function copyText(elId) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('[data-copy-target="' + elId + '"]');
+        if (btn) { btn.innerText = '✅ Copied!'; setTimeout(() => { btn.innerText = '📋 Copy'; }, 1500); }
+    });
+}
+</script>
 """, unsafe_allow_html=True)
 
 # ─── Session State Init ──────────────────────────────────────────────────────────
@@ -344,16 +403,56 @@ def render_step_bar(label: str, key: str, icon: str):
         <span>{icon} {label}</span>
     </div>""", unsafe_allow_html=True)
 
+def make_card(icon: str, title: str, content: str, copy_id: str = ""):
+    """Render a result card with an optional copy button."""
+    copy_btn = ""
+    if copy_id:
+        copy_btn = f'<button class="copy-btn" data-copy-target="{copy_id}" onclick="copyText(\'{copy_id}\')">📋 Copy</button>'
+    return f"""
+    <div class="card">
+        <div class="card-title">{icon} {title}{copy_btn}</div>
+        <div class="card-content" id="{copy_id}">{content}</div>
+    </div>"""
+
 # ─── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div class="hero-title" style="font-size:1.6rem">🎬 AI<br>Video</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-sub">Meeting Intelligence</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    st.markdown('<span class="badge badge-purple">Input</span>', unsafe_allow_html=True)
-    source = st.text_input("YouTube URL or File Path", placeholder="https://youtube.com/watch?v=... or /path/to/file.mp4")
+    # ── Input method toggle ──
+    st.markdown('<span class="badge badge-purple">Input Method</span>', unsafe_allow_html=True)
+    input_method = st.radio(
+        "Choose input method:",
+        ["📁 Upload File", "🔗 YouTube URL"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
 
-    language = st.selectbox("Language", ["english", "hinglish"], index=0)
+    uploaded_file = None
+    source = ""
+
+    if input_method == "📁 Upload File":
+        uploaded_file = st.file_uploader(
+            "Upload audio/video",
+            type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac"],
+            help="Max 200MB. Supports MP3, MP4, WAV, M4A, WebM, OGG, FLAC"
+        )
+    else:
+        source = st.text_input(
+            "YouTube URL",
+            placeholder="https://youtube.com/watch?v=..."
+        )
+        st.caption("⚠️ YouTube downloads may fail due to bot detection. Upload is more reliable.")
+
+    # ── Language / Translation ──
+    st.markdown('<span class="badge badge-cyan" style="margin-top:0.5rem">Language</span>', unsafe_allow_html=True)
+    language = st.selectbox(
+        "Output language",
+        ["English (translate if needed)", "Original language (as-is)"],
+        index=0,
+        help="Choose 'English' to auto-translate Hindi/other languages to English"
+    )
 
     run_btn = st.button("⚡  Analyse", use_container_width=True)
 
@@ -363,22 +462,21 @@ with st.sidebar:
         for step, icon, label in [
             ("audio",      "🔊", "Audio Processing"),
             ("transcript", "📝", "Transcription"),
-            ("title",      "🏷️", "Title Generation"),
-            ("summary",    "📋", "Summarisation"),
-            ("extract",    "🔍", "Extraction"),
-            ("rag",        "🧠", "RAG Engine"),
+            ("analysis",   "🧠", "AI Analysis"),
+            ("sentiment",  "🎭", "Tone Analysis"),
         ]:
             render_step_bar(label, step, icon)
 
 # ─── Main Area ──────────────────────────────────────────────────────────────────
 st.markdown('<div class="hero-title">AI Video Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-sub">Transcribe · Summarise · Chat with your meetings</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-sub">Transcribe · Summarise · Translate · Chat with your meetings</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # ── Run Pipeline ────────────────────────────────────────────────────────────────
 if run_btn:
-    if not source.strip():
-        st.error("Please enter a YouTube URL or file path.")
+    has_input = (uploaded_file is not None) or (source.strip() != "")
+    if not has_input:
+        st.error("Please upload a file or enter a YouTube URL.")
     else:
         st.session_state.pipeline_done = False
         st.session_state.result = None
@@ -394,17 +492,36 @@ if run_btn:
             with progress_placeholder.container():
                 st.info("⚙️ Pipeline running — see sidebar for live status…")
 
+            # ── Step 1: Get audio file ──
             update_step("audio", "active")
-            chunks = process_input(source)
+
+            if uploaded_file:
+                # Save uploaded file to disk
+                save_dir = "downloades"
+                os.makedirs(save_dir, exist_ok=True)
+                temp_path = os.path.join(save_dir, uploaded_file.name)
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+
+                # Convert to MP3 if needed
+                if temp_path.lower().endswith(".mp3"):
+                    audio_path = temp_path
+                else:
+                    audio_path = convert_to_mp3(temp_path)
+            else:
+                chunks = process_input(source)
+                audio_path = chunks[0]
+
             update_step("audio", "done")
 
-            for k in ["transcript", "title", "summary", "extract", "rag"]:
+            # ── Step 2-4: Transcribe + Analyse + Sentiment (all in one call) ──
+            for k in ["transcript", "analysis", "sentiment"]:
                 update_step(k, "active")
 
-            # Call Gemini service to do everything in one go
-            st.session_state.result = analyze_audio(chunks[0])
+            translate = language.startswith("English")
+            st.session_state.result = analyze_audio(audio_path, translate_to_english=translate)
 
-            for k in ["transcript", "title", "summary", "extract", "rag"]:
+            for k in ["transcript", "analysis", "sentiment"]:
                 update_step(k, "done")
 
             st.session_state.pipeline_done = True
@@ -414,7 +531,7 @@ if run_btn:
             st.rerun()
 
         except Exception as e:
-            for k in ["audio","transcript","title","summary","extract","rag"]:
+            for k in ["audio", "transcript", "analysis", "sentiment"]:
                 if st.session_state.pipeline_steps.get(k) == "active":
                     st.session_state.pipeline_steps[k] = "pending"
             progress_placeholder.error(f"❌ Error: {e}")
@@ -432,15 +549,51 @@ if st.session_state.result:
         </div>
     </div>""", unsafe_allow_html=True)
 
+    # ── Sentiment / Tone indicator ──
+    sentiment = r.get("sentiment", {})
+    if sentiment:
+        tone = sentiment.get("overall_tone", "neutral")
+        confidence = sentiment.get("confidence", "N/A")
+        explanation = sentiment.get("explanation", "")
+        highlights = sentiment.get("highlights", [])
+
+        tone_map = {
+            "positive": ("🟢", "var(--success)"),
+            "neutral":  ("🟡", "var(--warning)"),
+            "tense":    ("🔴", "var(--danger)"),
+            "mixed":    ("🟠", "#f97316"),
+        }
+        tone_emoji, tone_color = tone_map.get(tone, ("🟡", "var(--warning)"))
+
+        highlights_html = ""
+        if highlights:
+            highlights_html = '<div style="margin-top:0.75rem">'
+            for h in highlights[:3]:
+                highlights_html += f'<div class="tone-highlight">💬 {h}</div>'
+            highlights_html += '</div>'
+
+        st.markdown(f"""
+        <div class="tone-card" style="border-left:3px solid {tone_color}">
+            <div class="card-title">🎭 Meeting Tone</div>
+            <div style="display:flex;align-items:center;gap:0.75rem">
+                <span style="font-size:1.8rem">{tone_emoji}</span>
+                <div>
+                    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:1.1rem;text-transform:capitalize;color:var(--text)">
+                        {tone} — {confidence}
+                    </div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;margin-top:2px">
+                        {explanation}
+                    </div>
+                </div>
+            </div>
+            {highlights_html}
+        </div>""", unsafe_allow_html=True)
+
     # Top row: summary + transcript
     col1, col2 = st.columns([3, 2], gap="medium")
 
     with col1:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">📋 Summary</div>
-            <div class="card-content">{r['summary']}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(make_card("📋", "Summary", r['summary'], "summary-content"), unsafe_allow_html=True)
 
     with col2:
         with st.expander("📝 Full Transcript", expanded=False):
@@ -450,25 +603,27 @@ if st.session_state.result:
     c1, c2, c3 = st.columns(3, gap="medium")
 
     with c1:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">✅ Action Items</div>
-            <div class="card-content">{r['action_items']}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(make_card("✅", "Action Items", r['action_items'], "actions-content"), unsafe_allow_html=True)
 
     with c2:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">🔑 Key Decisions</div>
-            <div class="card-content">{r['key_decisions']}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(make_card("🔑", "Key Decisions", r['key_decisions'], "decisions-content"), unsafe_allow_html=True)
 
     with c3:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">❓ Open Questions</div>
-            <div class="card-content">{r['open_questions']}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(make_card("❓", "Open Questions", r['open_questions'], "questions-content"), unsafe_allow_html=True)
+
+    # ── Export PDF ──
+    st.markdown("---")
+    exp_col1, exp_col2, exp_col3 = st.columns([1, 2, 1])
+    with exp_col2:
+        pdf_bytes = generate_pdf_report(r)
+        safe_title = r.get("title", "report").replace(" ", "_").replace("/", "-")[:50]
+        st.download_button(
+            label="📄 Download PDF Report",
+            data=pdf_bytes,
+            file_name=f"{safe_title}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
     st.markdown("---")
 
@@ -528,11 +683,11 @@ else:
             Ready to Analyse
         </div>
         <div style="color:var(--text-muted);font-size:0.85rem;max-width:380px;line-height:1.7">
-            Paste a YouTube URL or local file path in the sidebar, choose your language, and hit <strong>Analyse</strong> to get started.
+            Upload an audio/video file or paste a YouTube URL in the sidebar, then hit <strong>Analyse</strong> to get started.
         </div>
         <div style="margin-top:2rem;display:flex;gap:1rem;flex-wrap:wrap;justify-content:center">
             <span class="badge badge-purple">Transcription</span>
-            <span class="badge badge-cyan">Summarisation</span>
+            <span class="badge badge-cyan">Translation</span>
             <span class="badge badge-green">RAG Chat</span>
         </div>
     </div>""", unsafe_allow_html=True)

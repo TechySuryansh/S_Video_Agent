@@ -13,9 +13,10 @@ def get_mistral_client():
         raise ValueError("MISTRAL_API_KEY is not set in environment or .env file.")
     return Mistral(api_key=api_key)
 
-def transcribe_audio_groq(mp3_path: str) -> str:
+def transcribe_audio_groq(mp3_path: str, translate_to_english: bool = False) -> str:
     """
     Transcribes audio using Groq Cloud Whisper API.
+    If translate_to_english is True, translates any language to English.
     If the file is larger than 24MB, chunks it into 10-minute segments,
     transcribes each segment, and joins the results.
     """
@@ -33,13 +34,17 @@ def transcribe_audio_groq(mp3_path: str) -> str:
         print(f"✓ Spliced into {len(chunks)} chunk(s).")
     else:
         chunks = [mp3_path]
+    
+    task_mode = "translate" if translate_to_english else "transcribe"
+    if translate_to_english:
+        print("🌐 Translation mode: will translate audio to English")
         
     full_transcript = ""
     for i, chunk in enumerate(chunks):
         if len(chunks) > 1:
-            print(f"🎙️ Transcribing chunk {i+1}/{len(chunks)} via Groq...")
+            print(f"🎙️ Processing chunk {i+1}/{len(chunks)} via Groq ({task_mode})...")
         else:
-            print(f"🎙️ Transcribing audio via Groq...")
+            print(f"🎙️ Processing audio via Groq ({task_mode})...")
             
         url = "https://api.groq.com/openai/v1/audio/transcriptions"
         headers = {
@@ -52,7 +57,8 @@ def transcribe_audio_groq(mp3_path: str) -> str:
             }
             data = {
                 "model": "whisper-large-v3-turbo",
-                "response_format": "json"
+                "response_format": "json",
+                "task": task_mode
             }
             response = requests.post(url, headers=headers, files=files, data=data)
             
@@ -71,13 +77,13 @@ def transcribe_audio_groq(mp3_path: str) -> str:
                 
     return full_transcript.strip()
 
-def analyze_audio(audio_path: str) -> dict:
+def analyze_audio(audio_path: str, translate_to_english: bool = False) -> dict:
     """
     Transcribes audio using Groq, then analyzes it with Mistral AI,
     returning a dictionary with structured meeting takeaways.
     """
     # 1. Transcribe the audio via Groq
-    transcript = transcribe_audio_groq(audio_path)
+    transcript = transcribe_audio_groq(audio_path, translate_to_english=translate_to_english)
     
     # Clean up the local MP3 file to save disk space
     try:
@@ -118,9 +124,38 @@ Transcript:
     
     analysis = json.loads(response.choices[0].message.content)
     
+    # 3. Analyze sentiment/tone
+    print("🎭 Analyzing meeting tone...")
+    sentiment = analyze_sentiment(client, transcript)
+    analysis["sentiment"] = sentiment
+    
     # Add the transcript back to the dict for the UI display
     analysis["transcript"] = transcript
     return analysis
+
+def analyze_sentiment(client, transcript: str) -> dict:
+    """Analyze the overall tone/sentiment of the meeting."""
+    prompt = f"""Analyze the tone and sentiment of this meeting transcript.
+Return a JSON object with:
+- "overall_tone": one of "positive", "neutral", "tense", "mixed"
+- "confidence": a percentage (e.g., "85%")
+- "explanation": one sentence explaining the tone (max 20 words)
+- "highlights": list of 2-3 brief notable emotional moments from the meeting (each max 15 words)
+
+Transcript:
+\"\"\"{transcript[:3000]}\"\"\"
+"""
+    
+    response = client.chat.complete(
+        model="mistral-small-latest",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"}
+    )
+    
+    try:
+        return json.loads(response.choices[0].message.content)
+    except Exception:
+        return {"overall_tone": "neutral", "confidence": "N/A", "explanation": "Could not determine tone.", "highlights": []}
 
 def ask_question_about_transcript(transcript: str, chat_history: list, question: str) -> str:
     """
